@@ -49,7 +49,7 @@ on:
         type: string
 
 env:
-  BUILD_VERSION: '1.0.1'
+  BUILD_VERSION: '1.0.2'
   PROFILE: ${{ inputs.profile || 'ufi003' }}
   REPO_URL: https://github.com/${{ inputs.upstream || 'lkiuyu/immortalwrt' }}
   REPO_BRANCH: master
@@ -93,8 +93,7 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo -E apt-get -y update
-        sudo -E apt-get -y install $(curl -fsSL https://raw.githubusercontent.com/xuxin1955/depend_ubuntu2204_openwrt/refs/heads/main/depend_ubuntu2204_openwrt)
+        bash scripts/install-dependencies.sh
 
     - name: mkbootimg build
       run: |

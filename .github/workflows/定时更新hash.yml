@@ -78,8 +78,7 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo -E apt-get -y update
-          sudo -E apt-get -y install $(curl -fsSL https://raw.githubusercontent.com/xuxin1955/depend_ubuntu2204_openwrt/refs/heads/main/depend_ubuntu2204_openwrt)
+          bash scripts/install-dependencies.sh
           sudo timedatectl set-timezone "$TZ"
           sudo chmod 777 /mnt
 
