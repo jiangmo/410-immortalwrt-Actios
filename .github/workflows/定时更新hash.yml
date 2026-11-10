@@ -1,5 +1,9 @@
 name: 🔒 每3天验证更新 hash
 
+defaults:
+  run:
+    shell: bash
+
 on:
   schedule:
     - cron: '0 2 */3 * *'  # 每3天凌晨2点自动运行
@@ -18,7 +22,7 @@ env:
 
 jobs:
   verify-and-lock:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     name: 🔍 验证上游并更新锁定 hash
@@ -97,12 +101,14 @@ jobs:
         working-directory: /mnt
         run: |
           git clone https://github.com/$UPSTREAM -b $REPO_BRANCH openwrt
+          git -C openwrt checkout "${{ steps.upstream.outputs.latest_hash }}"
           ln -sf /mnt/openwrt $GITHUB_WORKSPACE/openwrt
 
       - name: 复制文件和配置
         if: steps.check.outputs.need_verify == 'true'
         run: |
-          [ -e files ] && cp -r files openwrt/files
+          mkdir -p openwrt/files
+          cp -a files/. openwrt/files/
           [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
           [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
 

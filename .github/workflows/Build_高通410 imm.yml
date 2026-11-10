@@ -3,15 +3,14 @@
 
 name: 🚀 Build_imm_高通410系列
 
+defaults:
+  run:
+    shell: bash
+
 on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
-      ssh:
-        description: ' ← 选择是否开启 SSH 调试专业人员使用'
-        required: false
-        default: false
-        type: boolean
       profile:
         description: ' ↓ 支持多款型号 手动选择要编译的机型 ↓ '
         type: choice
@@ -50,10 +49,12 @@ on:
         type: string
 
 env:
-  REPO_URL: https://github.com/${{ github.event.inputs.upstream }}
+  BUILD_VERSION: '1.0.1'
+  PROFILE: ${{ inputs.profile || 'ufi003' }}
+  REPO_URL: https://github.com/${{ inputs.upstream || 'lkiuyu/immortalwrt' }}
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: ${{ format('config/{0}.config', github.event.inputs.profile) }}
+  CONFIG_FILE: ${{ format('config/{0}.config', inputs.profile || 'ufi003') }}
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: false
@@ -63,7 +64,8 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
     permissions:
       contents: write
       actions: write
@@ -154,8 +156,10 @@ jobs:
         ln -sf /mnt/openwrt $GITHUB_WORKSPACE/openwrt
 
 
-    - name:  files
-      run: cp -r files openwrt/files
+    - name: Copy overlay files
+      run: |
+        mkdir -p openwrt/files
+        cp -a files/. openwrt/files/
 
     - name: Load custom feeds
       run: |
@@ -166,7 +170,18 @@ jobs:
         
 
     - name: Update feeds
-      run: cd openwrt && ./scripts/feeds update -a
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a 2>&1 | tee feeds-update.log
+        if grep -q 'ERROR: please fix' feeds-update.log; then
+          find logs/feeds -name dump.txt -type f -print -exec cat {} \;
+          exit 1
+        fi
+        for feed in feeds/*; do
+          if [ -d "$feed/.git" ] || [ -f "$feed/.git" ]; then
+            printf '%s %s\n' "$feed" "$(git -C "$feed" rev-parse HEAD)"
+          fi
+        done | tee feeds-revisions.txt
 
     - name: Remove conflicting packages from smpackage
       run: |
@@ -178,8 +193,8 @@ jobs:
 
     - name: Load custom configuration
       run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        test -f "$CONFIG_FILE"
+        cp "$CONFIG_FILE" openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
@@ -202,31 +217,25 @@ jobs:
         done
         
         
-    - name: SSH 调试有效时间6h! 连接后输入q 输入exit即可退出，自动继续后续编译流程
-      uses: mxschmitt/action-tmate@master
-      if: ${{ inputs.ssh || contains(github.event.action, 'ssh') }}
-      
-      
     - name: Config defconfig
       id: config
       run: |
        cd openwrt
-       make defconfig
+       make defconfig 2>&1 | tee config.log
        
     - name: Download package
       id: package
       run: |
         cd openwrt
-        make download -j4 V=s
+        make download -j4 V=s 2>&1 | tee download.log
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 查看 openwrt 目录
-      run: ls -la openwrt/
-      
-           ls -l .config
-      
-           ls -la openwrt/.config
+    - name: 查看实际编译配置
+      run: |
+        ls -la openwrt/
+        ls -l openwrt/.config
+        grep '^CONFIG_TARGET.*=y' openwrt/.config
 
  
     - name: 自动上传最新源码生成.config编译配置
@@ -236,6 +245,8 @@ jobs:
        path: |
          ${{ github.workspace }}/openwrt/.config
          ${{ github.workspace }}/openwrt/feeds.conf.default
+         ${{ github.workspace }}/openwrt/feeds-revisions.txt
+         ${{ github.workspace }}/VERSION
        include-hidden-files: true
 
 
@@ -244,7 +255,7 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 V=s
+        make -j$(nproc) 2>&1 | tee build.log || make -j1 V=s 2>&1 | tee -a build.log
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
@@ -252,7 +263,8 @@ jobs:
 
     - name: Get kernel version
       run: |
-        KERNEL_VER=$(cat /mnt/openwrt/build_dir/target-*/linux-*/linux-*/.kernelversion 2>/dev/null | head -1 || echo "未知")
+        KERNEL_VER=$(find /mnt/openwrt/build_dir -name .kernelversion -type f -exec cat {} \; | head -1)
+        KERNEL_VER=${KERNEL_VER:-未知}
         echo "KERNEL_VER=$KERNEL_VER" >> $GITHUB_ENV
 
 
@@ -272,30 +284,33 @@ jobs:
 
     - name: Organize files
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      if: env.UPLOAD_FIRMWARE == 'true' && steps.compile.outputs.status == 'success'
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
-        PROFILE=${{ github.event.inputs.profile }}
-
-        # 创建刷机包目录并打包 zip
+        # 允许只存在压缩或未压缩镜像，避免 ls 缺失通配符导致 pipefail。
+        shopt -s nullglob
+        BOOT_IMAGES=( *boot.img.gz *boot.img )
+        SYSTEM_IMAGES=( *system.img.gz *system.img )
+        BOOT_IMG=${BOOT_IMAGES[0]:-}
+        SYSTEM_IMG=${SYSTEM_IMAGES[0]:-}
         mkdir -p flash_package
-        BOOT_IMG=$(ls *boot.img.gz *boot.img 2>/dev/null | head -1)
-        SYSTEM_IMG=$(ls *system.img.gz *system.img 2>/dev/null | head -1)
         if [ -z "$BOOT_IMG" ] || [ -z "$SYSTEM_IMG" ]; then
           echo "::error::固件文件未找到，编译可能失败！当前目录文件："
           ls -la
           exit 1
         fi
-        cp "$BOOT_IMG" flash_package/boot.img.gz
-        cp "$SYSTEM_IMG" flash_package/system.img.gz
-        # 解压供刷机脚本使用
-        gzip -dk flash_package/boot.img.gz
-        gzip -dk flash_package/system.img.gz
-        rm flash_package/boot.img.gz flash_package/system.img.gz
+        for kind in boot system; do
+          if [ "$kind" = boot ]; then image="$BOOT_IMG"; else image="$SYSTEM_IMG"; fi
+          if [[ "$image" == *.gz ]]; then
+            gzip -dc "$image" > "flash_package/$kind.img"
+          else
+            cp "$image" "flash_package/$kind.img"
+          fi
+        done
         cp -r $GITHUB_WORKSPACE/刷机脚本/. flash_package/
         # 确保 bat 文件是 CRLF 换行（Windows 兼容）
-        unix2dos flash_package/*.bat 2>/dev/null || sed -i 's/\r//' flash_package/*.bat && sed -i 's/$/\r/' flash_package/*.bat
+        sed -i 's/\r$//; s/$/\r/' flash_package/*.bat
         ZIP_NAME="OpenWrt_${PROFILE}${{ env.FILE_DATE }}_刷机包.zip"
         cd flash_package && zip -r "../$ZIP_NAME" . && cd ..
 
@@ -320,7 +335,7 @@ jobs:
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        PROFILE=${{ github.event.inputs.profile }}
+        echo "工作流版本: $BUILD_VERSION"
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")-${PROFILE}" >> $GITHUB_OUTPUT
         touch release.txt
         {
@@ -373,31 +388,20 @@ jobs:
         draft: false
         prerelease: false
 
-    - name: Delete old workflow runs via GitHub API
+    - name: Upload build diagnostics
       if: always()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        RETAIN_DAYS: 7
-        KEEP_MINIMUM_RUNS: 5
-      run: |
-        RUNS=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-          "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=100")
-        CUTOFF=$(date -d "-${RETAIN_DAYS} days" +%s)
-        DEL_IDS=$(echo "$RUNS" | jq -r --arg cutoff "$CUTOFF" --argjson keep "$KEEP_MINIMUM_RUNS" '
-          [.workflow_runs[]
-            | select((now - (.created_at | fromdateiso8601)) > ($cutoff | tonumber))
-            | {id, created_at}
-          ]
-          | sort_by(.created_at)
-          | .[:-$keep]
-          | .[].id
-        ')
-        if [[ -z "$DEL_IDS" ]]; then
-          echo "No old runs to delete."
-        else
-          echo "$DEL_IDS" | while read run_id; do
-            echo "Deleting run $run_id"
-            curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}/actions/runs/$run_id"
-          done
-        fi
+      uses: actions/upload-artifact@main
+      with:
+        name: build-diagnostics-${{ github.run_id }}
+        if-no-files-found: ignore
+        include-hidden-files: true
+        path: |
+          openwrt/feeds-update.log
+          openwrt/feeds-revisions.txt
+          openwrt/build.log
+          openwrt/config.log
+          openwrt/download.log
+          openwrt/logs/
+          openwrt/.config
+          openwrt/feeds.conf.default
+          VERSION
