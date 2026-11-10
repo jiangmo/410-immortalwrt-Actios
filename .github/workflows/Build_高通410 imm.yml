@@ -262,7 +262,7 @@ jobs:
 
     - name: Get kernel version
       run: |
-        KERNEL_VER=$(find /mnt/openwrt/build_dir -name .kernelversion -type f -exec cat {} \; | head -1)
+        KERNEL_VER=$(awk '$1 == "kernel" && $2 == "-" {split($3, parts, "~"); print parts[1]; exit}' openwrt/bin/targets/*/*/*.manifest)
         KERNEL_VER=${KERNEL_VER:-未知}
         echo "KERNEL_VER=$KERNEL_VER" >> $GITHUB_ENV
 
@@ -343,6 +343,7 @@ jobs:
           echo "| 项目 | 信息 |"
           echo "|------|------|"
           echo "| 编译者 | ${{ github.actor }} |"
+          echo "| 工作流版本 | $BUILD_VERSION |"
           echo "| 机型 | ${PROFILE} |"
           echo "| 内核版本 | ${{ env.KERNEL_VER }} |"
           echo "| 管理地址 | 192.168.1.1 |"

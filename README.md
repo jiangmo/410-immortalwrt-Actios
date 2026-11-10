@@ -10,6 +10,8 @@
 
 普通编译不再提供公共 SSH 调试入口，避免连接已关闭的公共 tmate 服务并耗尽运行时间。失败时请下载 Actions 的 `build-diagnostics-*` 日志附件。
 
+已验证 `ufi103s` 编译、打包及发布成功，内核 `6.12.85`：[固件下载](https://github.com/jiangmo/410-immortalwrt-Actios/releases/tag/2026.11.10-1859-ufi103s)，详见 [003-ufi103s编译验证结果-202611101902.md](003-ufi103s编译验证结果-202611101902.md)。本次基础固件使用 Bootstrap 主题，未包含原历史配置中源未提供的 Argon 和 DDNS-Go。
+
 ## 编译固件步骤
 
 1. 先把本仓库Fork到你自己账号下
