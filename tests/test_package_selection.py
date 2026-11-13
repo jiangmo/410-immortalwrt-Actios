@@ -32,9 +32,10 @@ class PackageSelectionTest(unittest.TestCase):
     def test_alias_dedup_and_replacement(self):
         self.run_script('prepare', '--packages', PACKAGES + ',luci-app-store,luci-app-ttyd')
         names = [p['resolved'] for p in self.state()['packages']]
-        self.assertEqual(len(names), 6)
+        self.assertEqual(len(names), 7)
         self.assertIn('luci-app-store', names)
         self.assertIn('luci-compat', names)
+        self.assertIn('xz-utils', names)
         config = self.config.read_text(encoding='utf-8')
         self.assertEqual(config.count('CONFIG_PACKAGE_luci-app-ttyd=y'), 1)
         self.assertNotIn('is not set', config)
@@ -87,6 +88,18 @@ class PackageSelectionTest(unittest.TestCase):
     def test_manifest_requires_config_verification(self):
         self.prepare()
         self.run_script('check-manifest', '--manifest', self.manifest(), ok=False)
+
+    def test_store_enables_and_audits_xz_parent_menu(self):
+        self.config.write_text('# CONFIG_PACKAGE_xz-utils is not set\n', encoding='utf-8')
+        self.run_script('prepare', '--packages', 'luci-app-store')
+        self.assertIn('CONFIG_PACKAGE_xz-utils=y', self.config.read_text(encoding='utf-8'))
+        self.run_script('check-config')
+        self.config.write_text(self.config.read_text(encoding='utf-8').replace('CONFIG_PACKAGE_xz-utils=y', '# CONFIG_PACKAGE_xz-utils is not set'), encoding='utf-8')
+        self.assertIn('xz-utils', self.run_script('check-config', ok=False).stderr)
+
+    def test_openclash_does_not_force_store_dependency(self):
+        self.run_script('prepare', '--packages', 'luci-app-openclash')
+        self.assertNotIn('xz-utils', [p['resolved'] for p in self.state()['packages']])
 
 
 if __name__ == '__main__':

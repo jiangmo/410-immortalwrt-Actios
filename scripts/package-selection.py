@@ -38,6 +38,11 @@ def prepare(args):
         add("luci-theme-argon", "profile")
     if seen.intersection({"luci-app-openclash", "luci-app-store"}):
         add("luci-compat", "dependency")
+    if "luci-app-store" in seen:
+        # iStore -> tar -> xz has a plain (not +select) dependency on
+        # xz-utils in the locked packages feed. With tar's default XZ
+        # support enabled, leaving this parent menu off hides tar/iStore.
+        add("xz-utils", "dependency")
 
     symbols = {f"CONFIG_PACKAGE_{entry['resolved']}" for entry in packages}
     # Replace existing y/m/not-set lines, instead of appending duplicate assignments.
