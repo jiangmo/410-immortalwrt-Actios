@@ -140,7 +140,11 @@ jobs:
 
       - name: 生成配置
         if: steps.check.outputs.need_verify == 'true'
-        run: cd openwrt && make defconfig
+        run: |
+          cd openwrt
+          python3 "$GITHUB_WORKSPACE/scripts/package-selection.py" prepare
+          make defconfig
+          python3 "$GITHUB_WORKSPACE/scripts/package-selection.py" check-config
 
       - name: 下载包
         if: steps.check.outputs.need_verify == 'true'
@@ -159,6 +163,7 @@ jobs:
           make package/feeds/packages/glib2/compile -j$(nproc)
           make package/feeds/packages/libmbim/compile -j$(nproc)
           make -j$(nproc) || make -j1 V=s
+          python3 "$GITHUB_WORKSPACE/scripts/package-selection.py" check-manifest --manifest bin/targets/*/*/*.manifest
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 更新锁定 hash (Update locked hash on success)

@@ -10,8 +10,8 @@
 #sed -i 's/192.168.1.1/192.168.100.1/g' package/base-files/files/bin/config_generate
 
 
-# 修改默认主题为 argon
-sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
+# Argon 由机型配置/额外包选择启用，自身 uci-defaults 负责注册并选择主题。
+# 不再改写固定版本 LuCI feed 的 Makefile；Bootstrap 保留作为备用主题。
 
 
 # 临时添加的插件

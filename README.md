@@ -2,7 +2,7 @@
 
 经常遇见找不到好的固件，不是软件源不能安装，就是版本太老，要不就是别人固件装了自己不需要的插件功能。那就直接编译一个属于自己的openwrt刷机包，简单几步就可以完成编译，本地不需要装任何环境，不需要懂 Linux，不需要懂编译，编译好的固件包傻瓜化一键刷机。
 
-- 工作流版本：`1.0.2`。默认使用 `upstream_lock.txt` 锁定的源码和 `feeds.conf.default` 固定的软件源版本。
+- 工作流版本：`1.0.3`。默认使用 `upstream_lock.txt` 锁定的源码和 `feeds.conf.default` 固定的软件源版本；Argon 源码另由 `custom-packages.lock` 固定。
 - 想要什么插件自己填，编出来的固件完全是你决定
 - 底包极致优化，不用担心各种bug。
 - 支持自定义输入插件包，驱动包，主题包，python包，perl包，lib包，等等。
@@ -10,7 +10,17 @@
 
 普通编译不再提供公共 SSH 调试入口，避免连接已关闭的公共 tmate 服务并耗尽运行时间。失败时请下载 Actions 的 `build-diagnostics-*` 日志附件。
 
-已验证 `ufi103s` 编译、打包及发布成功，内核 `6.12.85`：[固件下载](https://github.com/jiangmo/410-immortalwrt-Actios/releases/tag/2026.11.10-1859-ufi103s)，详见 [003-ufi103s编译验证结果-202611101902.md](003-ufi103s编译验证结果-202611101902.md)。本次基础固件使用 Bootstrap 主题，未包含原历史配置中源未提供的 Argon 和 DDNS-Go。
+历史 `v1.0.2` 已验证 `ufi103s` 编译、打包及发布成功，内核 `6.12.85`，详见 [003-ufi103s编译验证结果-202611101902.md](003-ufi103s编译验证结果-202611101902.md)。该版本缺少 Argon/OpenClash/iStore 来源，历史固件不能通过更改工作流自动补包，需要重新编译并刷入新固件。
+
+`v1.0.3` 已补齐 Argon、OpenClash、iStore 的固定版本源码。额外包会在 `make defconfig` 后和最终固件 manifest 中分别核验；任一缺失就失败，Release 仅展示核验通过的实际包名和版本，不再把输入列表当成安装结果。
+
+例如额外包可填写：
+
+```text
+luci-theme-argon luci-app-openclash luci-app-ttyd luci-app-dockerman luci-app-store
+```
+
+`luci-app-istore` 也可输入，流程会明确映射为正确包名 `luci-app-store`。OpenClash/iStore 自动补选 `luci-compat`。OpenClash 内核及订阅仍需刷机后按插件界面配置；iStore 中的应用能否安装还取决于其架构与依赖，不能保证所有应用都适配。
 
 ## 编译固件步骤
 
@@ -83,13 +93,13 @@
 
 ---
 
-### 已启用的默认插件（共3个）不要把这3个插件添加编辑固件里面。
+### 默认配置选择的界面包（成品以验证报告为准）
 
 | 序号 | 插件 | 说明 | 菜单位置 |
 |-----|-----|------|---------|
 | 1 | luci-theme-argon  | argon主题插件 | 国内比较火的主题 |
 | 2 | luci-app-package-manager | 软件包管理 | 系统 → 软件包 |
-| 3 | luci-app-firewallr | 防火墙插件 | 系统 → 防火墙 |
+| 3 | luci-app-firewall | 防火墙插件 | 网络 → 防火墙 |
 ### 已启用的默认驱动模块，请不要重复添加。
 
 | 序号 | 插件 | 说明 | 菜单位置 |
@@ -112,11 +122,13 @@
 | 19 | kmod-usb-serial-option | USB 串口 Option 驱动 | 内核模块 |
 | 20 | kmod-usb-serial-wwan | USB 串口 WWAN 驱动 | 内核模块 |
 | 21 | kmod-usb-wdm | USB WDM 驱动 | 内核模块 |
-### 已添加第三方源码插件库。
+### 已固定的第三方源码
 
 | 序号 | 地址 | 说明 | 使用方法 |
 |-----|-----|------|------|
-| 1 | https://github.com/kenzok8/small-package | 常用OpenWrt软件包源码合集 | 在编译时填写插件名 |
+| 1 | https://github.com/jerrykuku/luci-theme-argon | Argon 主题，提交由 custom-packages.lock 固定 | 默认机型配置或额外选择 luci-theme-argon |
+| 2 | https://github.com/vernesong/OpenClash | OpenClash，提交由 feeds.conf.default 固定 | 额外选择 luci-app-openclash |
+| 3 | https://github.com/istoreos/istore | iStore 及任务库，提交由 feeds.conf.default 固定 | 额外选择 luci-app-store |
 ---
 ### 已禁用的内核调试信息
 
